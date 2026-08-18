@@ -19,6 +19,8 @@ import java.util.Date;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
+    private static final long RESTANDBY_DELAY_MS = 3000; // 唤醒后无操作重新待机的时间
+
     private LinearLayout homeLayout;
     private Button btnStandby;
     private Button btnExitApp;
@@ -28,6 +30,7 @@ public class MainActivity extends Activity {
     private Handler handler;
     private Runnable timeRunnable;
     private Runnable hideTimeRunnable;
+    private Runnable restandbyRunnable;
     private SimpleDateFormat timeFormat;
     private boolean isDeepStandby = false;
     private float originalBrightness;
@@ -109,7 +112,7 @@ public class MainActivity extends Activity {
         timeParams.gravity = Gravity.CENTER;
         standbyLayout.addView(tvTime, timeParams);
 
-        // 唤醒后显示的「退出待机」按钮：屏幕中央偏上
+        // 唤醒后显示的「退出待机」按钮：位于时间正下方，间距适中
         btnExitStandby = new Button(this);
         btnExitStandby.setText("退出待机");
         btnExitStandby.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
@@ -121,7 +124,7 @@ public class MainActivity extends Activity {
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT);
         exitStandbyParams.gravity = Gravity.CENTER;
-        exitStandbyParams.topMargin = 250;
+        exitStandbyParams.topMargin = 100; // 中心下方 100px（topMargin 为正值时向下偏移）
         standbyLayout.addView(btnExitStandby, exitStandbyParams);
 
         rootLayout.addView(homeLayout, new FrameLayout.LayoutParams(
@@ -139,6 +142,9 @@ public class MainActivity extends Activity {
         standbyLayout.setOnClickListener(v -> {
             if (isDeepStandby) {
                 wakeUpStandby();
+            } else {
+                // 唤醒态下点击屏幕 = 用户在看时间，重置「无操作重新待机」计时
+                startRestandbyTimer();
             }
         });
         btnExitStandby.setOnClickListener(v -> exitStandbyMode());
@@ -159,16 +165,21 @@ public class MainActivity extends Activity {
             }
         };
         handler.post(timeRunnable);
-        hideTimeRunnable = () -> {
-            isDeepStandby = true;
-            tvTime.setVisibility(View.GONE);
-            WindowManager.LayoutParams lp = getWindow().getAttributes();
-            lp.screenBrightness = 0.0f;
-            getWindow().setAttributes(lp);
-        };
+        // 3 秒后进入深度待机（隐藏时间、压暗亮度）
+        hideTimeRunnable = () -> enterDeepStandby();
         handler.postDelayed(hideTimeRunnable, 3000);
     }
 
+    /** 深度待机：隐藏时间，窗口亮度压到最低 */
+    private void enterDeepStandby() {
+        isDeepStandby = true;
+        tvTime.setVisibility(View.GONE);
+        WindowManager.LayoutParams lp = getWindow().getAttributes();
+        lp.screenBrightness = 0.0f;
+        getWindow().setAttributes(lp);
+    }
+
+    /** 唤醒：恢复时间显示，并启动「3 秒无操作重新待机」计时 */
     private void wakeUpStandby() {
         isDeepStandby = false;
         WindowManager.LayoutParams lp = getWindow().getAttributes();
@@ -180,11 +191,27 @@ public class MainActivity extends Activity {
             handler.removeCallbacks(timeRunnable);
             handler.post(timeRunnable);
         }
+        startRestandbyTimer();
+    }
+
+    /** 唤醒态下重置「无操作重新待机」计时 */
+    private void startRestandbyTimer() {
+        if (restandbyRunnable != null) {
+            handler.removeCallbacks(restandbyRunnable);
+        }
+        restandbyRunnable = () -> {
+            // 用户已看到时间，若 3 秒无任何操作则回到深度待机
+            if (!isDeepStandby) {
+                enterDeepStandby();
+            }
+        };
+        handler.postDelayed(restandbyRunnable, RESTANDBY_DELAY_MS);
     }
 
     private void exitStandbyMode() {
         if (timeRunnable != null) handler.removeCallbacks(timeRunnable);
         if (hideTimeRunnable != null) handler.removeCallbacks(hideTimeRunnable);
+        if (restandbyRunnable != null) handler.removeCallbacks(restandbyRunnable);
         WindowManager.LayoutParams lp = getWindow().getAttributes();
         lp.screenBrightness = -1.0f;
         getWindow().setAttributes(lp);
