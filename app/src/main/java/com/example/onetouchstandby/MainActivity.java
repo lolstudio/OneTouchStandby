@@ -170,10 +170,11 @@ public class MainActivity extends Activity {
         handler.postDelayed(hideTimeRunnable, 3000);
     }
 
-    /** 深度待机：隐藏时间，窗口亮度压到最低 */
+    /** 深度待机：隐藏时间与按钮，窗口亮度压到最低 */
     private void enterDeepStandby() {
         isDeepStandby = true;
         tvTime.setVisibility(View.GONE);
+        btnExitStandby.setVisibility(View.GONE);
         WindowManager.LayoutParams lp = getWindow().getAttributes();
         lp.screenBrightness = 0.0f;
         getWindow().setAttributes(lp);
