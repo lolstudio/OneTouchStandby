@@ -1,28 +1,34 @@
 package com.example.onetouchstandby;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.InputType;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
     private static final long RESTANDBY_DELAY_MS = 3000; // 唤醒后无操作重新待机的时间
+    private static final String STANDBY_PASSWORD = "2024"; // 密码待机模式的退出密码
 
     private LinearLayout homeLayout;
     private Button btnStandby;
+    private Button btnPasswordStandby;
     private Button btnExitApp;
     private FrameLayout standbyLayout;
     private TextView tvTime;
@@ -33,6 +39,7 @@ public class MainActivity extends Activity {
     private Runnable restandbyRunnable;
     private SimpleDateFormat timeFormat;
     private boolean isDeepStandby = false;
+    private boolean passwordRequired = false; // 当前待机是否要求密码才能退出
     private float originalBrightness;
 
     @Override
@@ -76,6 +83,7 @@ public class MainActivity extends Activity {
         homeLayout.setGravity(Gravity.CENTER);
         homeLayout.setBackgroundColor(Color.parseColor("#121212"));
 
+        // 普通待机：居中主按钮
         btnStandby = new Button(this);
         btnStandby.setText("待机模式");
         btnStandby.setTextSize(TypedValue.COMPLEX_UNIT_SP, 32);
@@ -86,8 +94,21 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams btnStandbyParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        btnStandbyParams.bottomMargin = 60;
+        btnStandbyParams.bottomMargin = 40;
         homeLayout.addView(btnStandby, btnStandbyParams);
+
+        // 密码待机：屏幕中间底部区域
+        btnPasswordStandby = new Button(this);
+        btnPasswordStandby.setText("密码待机模式");
+        btnPasswordStandby.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
+        btnPasswordStandby.setTextColor(Color.WHITE);
+        btnPasswordStandby.setBackgroundColor(Color.parseColor("#455A64"));
+        btnPasswordStandby.setPadding(60, 30, 60, 30);
+        LinearLayout.LayoutParams pwStandbyParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        pwStandbyParams.bottomMargin = 40;
+        homeLayout.addView(btnPasswordStandby, pwStandbyParams);
 
         btnExitApp = new Button(this);
         btnExitApp.setText("退出app");
@@ -137,7 +158,8 @@ public class MainActivity extends Activity {
     }
 
     private void setupListeners() {
-        btnStandby.setOnClickListener(v -> enterStandbyMode());
+        btnStandby.setOnClickListener(v -> enterStandbyMode(false));
+        btnPasswordStandby.setOnClickListener(v -> enterStandbyMode(true));
         btnExitApp.setOnClickListener(v -> exitApp());
         standbyLayout.setOnClickListener(v -> {
             if (isDeepStandby) {
@@ -147,10 +169,18 @@ public class MainActivity extends Activity {
                 startRestandbyTimer();
             }
         });
-        btnExitStandby.setOnClickListener(v -> exitStandbyMode());
+        btnExitStandby.setOnClickListener(v -> {
+            if (passwordRequired) {
+                showPasswordDialog();
+            } else {
+                exitStandbyMode();
+            }
+        });
     }
 
-    private void enterStandbyMode() {
+    /** 进入待机：普通模式直接退出，密码模式需输入正确密码 */
+    private void enterStandbyMode(boolean requirePassword) {
+        passwordRequired = requirePassword;
         homeLayout.setVisibility(View.GONE);
         standbyLayout.setVisibility(View.VISIBLE);
         tvTime.setVisibility(View.VISIBLE);
@@ -207,6 +237,49 @@ public class MainActivity extends Activity {
             }
         };
         handler.postDelayed(restandbyRunnable, RESTANDBY_DELAY_MS);
+    }
+
+    /** 密码待机模式下退出前验证密码；错误提示「景和年」，支持多次尝试 */
+    private void showPasswordDialog() {
+        cancelRestandbyTimer();
+        final EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_NUMBER);
+        input.setHint("请输入密码");
+        input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        input.setGravity(Gravity.CENTER);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("输入密码退出待机")
+                .setView(input)
+                .setPositiveButton("确定", null)
+                .setNegativeButton("取消", null)
+                .setCancelable(false)
+                .create();
+        dialog.show();
+        // 自定按钮监听，密码错误时不关闭对话框，可多次重试
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String pwd = input.getText().toString().trim();
+            if (STANDBY_PASSWORD.equals(pwd)) {
+                dialog.dismiss();
+                exitStandbyMode();
+            } else {
+                Toast.makeText(this, "景和年", Toast.LENGTH_SHORT).show();
+                input.setText("");
+            }
+        });
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v -> {
+            dialog.dismiss();
+            // 取消后回到唤醒态，重新计时
+            if (!isDeepStandby) {
+                startRestandbyTimer();
+            }
+        });
+    }
+
+    private void cancelRestandbyTimer() {
+        if (restandbyRunnable != null) {
+            handler.removeCallbacks(restandbyRunnable);
+        }
     }
 
     private void exitStandbyMode() {
