@@ -1,23 +1,19 @@
 package com.example.onetouchstandby;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.text.InputType;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -25,6 +21,7 @@ import java.util.Locale;
 public class MainActivity extends Activity {
     private static final long RESTANDBY_DELAY_MS = 3000; // 唤醒后无操作重新待机的时间
     private static final String STANDBY_PASSWORD = "2024"; // 密码待机模式的退出密码
+    private static final int PWD_LENGTH = 4; // 密码位数
 
     private LinearLayout homeLayout;
     private Button btnStandby;
@@ -41,6 +38,12 @@ public class MainActivity extends Activity {
     private boolean isDeepStandby = false;
     private boolean passwordRequired = false; // 当前待机是否要求密码才能退出
     private float originalBrightness;
+
+    // 密码解锁界面（iPhone 风格）
+    private FrameLayout passwordOverlay;
+    private final StringBuilder pwdInput = new StringBuilder();
+    private TextView[] dotViews = new TextView[PWD_LENGTH];
+    private TextView tvPwdError;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -148,13 +151,135 @@ public class MainActivity extends Activity {
         exitStandbyParams.topMargin = 100; // 中心下方 100px（topMargin 为正值时向下偏移）
         standbyLayout.addView(btnExitStandby, exitStandbyParams);
 
+        // 密码解锁浮层（iPhone 风格），盖在待机界面之上
+        passwordOverlay = buildPasswordOverlay();
+        passwordOverlay.setVisibility(View.GONE);
+
         rootLayout.addView(homeLayout, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
         rootLayout.addView(standbyLayout, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
+        rootLayout.addView(passwordOverlay, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
         setContentView(rootLayout);
+    }
+
+    /** 构建 iPhone 风格密码解锁界面：4 个圆点 + 数字键盘 */
+    private FrameLayout buildPasswordOverlay() {
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundColor(Color.parseColor("#EE000000"));
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setGravity(Gravity.CENTER_HORIZONTAL);
+
+        // 标题
+        TextView title = new TextView(this);
+        title.setText("输入密码");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 28);
+        title.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        titleParams.bottomMargin = 30;
+        box.addView(title, titleParams);
+
+        // 4 个密码圆点
+        LinearLayout dotsRow = new LinearLayout(this);
+        dotsRow.setOrientation(LinearLayout.HORIZONTAL);
+        dotsRow.setGravity(Gravity.CENTER);
+        for (int i = 0; i < PWD_LENGTH; i++) {
+            TextView dot = new TextView(this);
+            dot.setText("○");
+            dot.setTextColor(Color.WHITE);
+            dot.setTextSize(TypedValue.COMPLEX_UNIT_SP, 36);
+            LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            dotParams.leftMargin = 20;
+            dotParams.rightMargin = 20;
+            dotsRow.addView(dot, dotParams);
+            dotViews[i] = dot;
+        }
+        LinearLayout.LayoutParams dotsParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        dotsParams.bottomMargin = 16;
+        box.addView(dotsRow, dotsParams);
+
+        // 错误提示（密码错误时显示「景和年」）
+        tvPwdError = new TextView(this);
+        tvPwdError.setText("");
+        tvPwdError.setTextColor(Color.parseColor("#FF5252"));
+        tvPwdError.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        tvPwdError.setGravity(Gravity.CENTER);
+        tvPwdError.setMinHeight((int) TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, 30, getResources().getDisplayMetrics()));
+        LinearLayout.LayoutParams errParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        errParams.bottomMargin = 20;
+        box.addView(tvPwdError, errParams);
+
+        // 数字键盘：3 行数字 + 最后一行（取消 / 0 / 删除）
+        String[][] keys = {
+                {"1", "2", "3"},
+                {"4", "5", "6"},
+                {"7", "8", "9"},
+                {"取消", "0", "删除"}
+        };
+        for (String[] row : keys) {
+            LinearLayout rowLayout = new LinearLayout(this);
+            rowLayout.setOrientation(LinearLayout.HORIZONTAL);
+            rowLayout.setGravity(Gravity.CENTER);
+            for (String key : row) {
+                Button btn;
+                if ("取消".equals(key)) {
+                    btn = buildKeyButton(key, Color.TRANSPARENT, Color.GRAY, 18);
+                    btn.setOnClickListener(v -> hidePasswordOverlay());
+                } else if ("删除".equals(key)) {
+                    btn = buildKeyButton("⌫", Color.parseColor("#37474F"), Color.WHITE, 26);
+                    btn.setOnClickListener(v -> onPwdDelete());
+                } else {
+                    btn = buildKeyButton(key, Color.parseColor("#37474F"), Color.WHITE, 30);
+                    final String digit = key;
+                    btn.setOnClickListener(v -> onPwdDigit(digit));
+                }
+                LinearLayout.LayoutParams keyParams = new LinearLayout.LayoutParams(
+                        (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 110,
+                                getResources().getDisplayMetrics()),
+                        (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 72,
+                                getResources().getDisplayMetrics()));
+                keyParams.leftMargin = 12;
+                keyParams.rightMargin = 12;
+                keyParams.topMargin = 6;
+                keyParams.bottomMargin = 6;
+                rowLayout.addView(btn, keyParams);
+            }
+            box.addView(rowLayout);
+        }
+
+        FrameLayout.LayoutParams boxParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT);
+        boxParams.gravity = Gravity.CENTER;
+        overlay.addView(box, boxParams);
+        return overlay;
+    }
+
+    /** 生成键盘按钮 */
+    private Button buildKeyButton(String label, int bgColor, int textColor, float spSize) {
+        Button btn = new Button(this);
+        btn.setText(label);
+        btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, spSize);
+        btn.setTextColor(textColor);
+        btn.setBackgroundColor(bgColor);
+        btn.setTypeface(null, Typeface.BOLD);
+        return btn;
     }
 
     private void setupListeners() {
@@ -171,7 +296,7 @@ public class MainActivity extends Activity {
         });
         btnExitStandby.setOnClickListener(v -> {
             if (passwordRequired) {
-                showPasswordDialog();
+                showPasswordOverlay();
             } else {
                 exitStandbyMode();
             }
@@ -239,42 +364,68 @@ public class MainActivity extends Activity {
         handler.postDelayed(restandbyRunnable, RESTANDBY_DELAY_MS);
     }
 
-    /** 密码待机模式下退出前验证密码；错误提示「景和年」，支持多次尝试 */
-    private void showPasswordDialog() {
-        cancelRestandbyTimer();
-        final EditText input = new EditText(this);
-        input.setInputType(InputType.TYPE_CLASS_NUMBER);
-        input.setHint("请输入密码");
-        input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
-        input.setGravity(Gravity.CENTER);
+    // ==================== 密码解锁（iPhone 风格） ====================
 
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("输入密码退出待机")
-                .setView(input)
-                .setPositiveButton("确定", null)
-                .setNegativeButton("取消", null)
-                .setCancelable(false)
-                .create();
-        dialog.show();
-        // 自定按钮监听，密码错误时不关闭对话框，可多次重试
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            String pwd = input.getText().toString().trim();
-            if (STANDBY_PASSWORD.equals(pwd)) {
-                dialog.dismiss();
-                exitStandbyMode();
-            } else {
-                Toast.makeText(this, "景和年", Toast.LENGTH_SHORT).show();
-                input.setText("");
-            }
-        });
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v -> {
-            dialog.dismiss();
-            // 取消后回到唤醒态，重新计时
-            if (!isDeepStandby) {
-                startRestandbyTimer();
-            }
-        });
+    /** 显示密码解锁浮层：清空输入、暂停自动回待机计时 */
+    private void showPasswordOverlay() {
+        cancelRestandbyTimer();
+        pwdInput.setLength(0);
+        tvPwdError.setText("");
+        updatePwdDots();
+        passwordOverlay.setVisibility(View.VISIBLE);
     }
+
+    /** 隐藏密码解锁浮层：回到唤醒态并恢复计时 */
+    private void hidePasswordOverlay() {
+        passwordOverlay.setVisibility(View.GONE);
+        if (!isDeepStandby) {
+            startRestandbyTimer();
+        }
+    }
+
+    /** 输入一位数字；输满 4 位后自动校验 */
+    private void onPwdDigit(String digit) {
+        if (pwdInput.length() >= PWD_LENGTH) {
+            return; // 最多 4 位
+        }
+        tvPwdError.setText("");
+        pwdInput.append(digit);
+        updatePwdDots();
+        if (pwdInput.length() == PWD_LENGTH) {
+            // 稍作停顿让最后一个圆点可见，再校验
+            handler.postDelayed(this::validatePwdInput, 150);
+        }
+    }
+
+    /** 删除最后一位 */
+    private void onPwdDelete() {
+        if (pwdInput.length() > 0) {
+            pwdInput.deleteCharAt(pwdInput.length() - 1);
+            tvPwdError.setText("");
+            updatePwdDots();
+        }
+    }
+
+    /** 校验密码：正确则退出待机；错误显示「景和年」并清空，可多次重试 */
+    private void validatePwdInput() {
+        if (STANDBY_PASSWORD.contentEquals(pwdInput)) {
+            passwordOverlay.setVisibility(View.GONE);
+            exitStandbyMode();
+        } else {
+            tvPwdError.setText("景和年");
+            pwdInput.setLength(0);
+            updatePwdDots();
+        }
+    }
+
+    /** 刷新密码圆点显示 */
+    private void updatePwdDots() {
+        for (int i = 0; i < PWD_LENGTH; i++) {
+            dotViews[i].setText(i < pwdInput.length() ? "●" : "○");
+        }
+    }
+
+    // ==================== 待机与退出 ====================
 
     private void cancelRestandbyTimer() {
         if (restandbyRunnable != null) {
