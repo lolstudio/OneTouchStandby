@@ -77,6 +77,12 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** 屏蔽返回键：小白点/悬浮球模拟的返回会直接退出 app 绕过密码，一律无效 */
+    @Override
+    public void onBackPressed() {
+        // 什么都不做：返回键在待机与密码解锁期间一律拦截
+    }
+
     private void initViews() {
         FrameLayout rootLayout = new FrameLayout(this);
         rootLayout.setBackgroundColor(Color.BLACK);
