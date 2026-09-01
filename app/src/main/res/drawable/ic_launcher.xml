@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 休眠主题应用图标：深蓝圆底 + 金黄月牙 + 白色 Z z 睡眠符号 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- 深蓝圆形背景 -->
+    <path
+        android:fillColor="#1A237E"
+        android:pathData="M12,12 m-12,0 a12,12 0 1,1 24,0 a12,12 0 1,1 -24,0" />
+
+    <!-- 金黄月牙（休眠直观符号） -->
+    <path
+        android:fillColor="#FFD54F"
+        android:pathData="M13.2,3.5 C8.4,3.9 4.7,7.9 4.7,12.8 c0,5.1 4.1,9.2 9.2,9.2 c3.4,0 6.4,-1.9 8,-4.6 c-6.9,0.2 -11.1,-7.4 -7.7,-13.9 c-0.3,0 -0.6,0 -1,0 z" />
+
+    <!-- 白色 Z z 睡眠符号 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M15.5,5.5 h3.2 l-3.2,3.4 h3.2 l0,1.4 h-5 l0,-1.4 l3.2,-3.4 h-3.4 z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M18.9,11.5 h2.2 l-2.2,2.3 h2.2 l0,1 h-3.4 l0,-1 l2.2,-2.3 h-2.3 z" />
+</vector>
